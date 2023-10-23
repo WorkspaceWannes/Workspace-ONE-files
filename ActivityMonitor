@@ -1,0 +1,93 @@
+# Define the event IDs, logon type, username, and lock/unlock event IDs
+$logonEventID = 4624
+$logoffEventID = 4647
+$lockEventID = 4800
+$unlockEventID = 4801
+$logonTypes = 2, 11
+$username = "wdeb79mx"
+
+# Gather events
+function Get-Events($eventID) {
+    Get-WinEvent -FilterHashtable @{
+        LogName   = 'Security'
+        ID       = $eventID
+    } -ErrorAction SilentlyContinue
+}
+
+$logonEvents = Get-Events $logonEventID | Where-Object {
+    ($logonTypes -contains $_.Properties[8].Value) -and ($_.Properties[5].Value -eq $username)
+}
+
+$logoffEvents = Get-Events $logoffEventID | Where-Object { $_.Properties[1].Value -eq $username }
+$lockEvents = Get-Events $lockEventID | Where-Object { $_.Properties[1].Value -eq $username }
+$unlockEvents = Get-Events $unlockEventID | Where-Object { $_.Properties[1].Value -eq $username }
+
+# Diagnostic Output for Lock/Unlock events
+$lockEventsCount = ($lockEvents | Measure-Object).Count
+$unlockEventsCount = ($unlockEvents | Measure-Object).Count
+
+# Initialize session statistics
+$sessionDurations = @()
+$sessionCount = 0
+
+$logonEvents | ForEach-Object {
+    $logonTime = $_.TimeCreated
+    $logonID = $_.Properties[7].Value
+
+    $matchedLogoff = $logoffEvents | Where-Object { $_.Properties[3].Value -eq $logonID } | Select-Object -First 1
+
+    if ($matchedLogoff) {
+        $logoffTime = $matchedLogoff.TimeCreated
+
+        # Calculate locked durations within this session
+        $lockedDurations = @()
+        $relevantLockEvents = $lockEvents | Where-Object { $_.TimeCreated -ge $logonTime -and $_.TimeCreated -le $logoffTime }
+
+        # Diagnostic output for the relevant Lock/Unlock events
+        Write-Output "Relevant Lock Events Count: $($relevantLockEvents.Count)"
+        
+        $lastUnlockTime = $logonTime
+        $relevantLockEvents | ForEach-Object {
+            $lockTime = $_.TimeCreated
+            $matchedUnlock = $unlockEvents | Where-Object { $_.TimeCreated -gt $lockTime -and $_.TimeCreated -le $logoffTime -and $_.TimeCreated -gt $lastUnlockTime } | Select-Object -First 1
+
+            if ($matchedUnlock) {
+                $unlockTime = $matchedUnlock.TimeCreated
+                $lockedDuration = $unlockTime - $lockTime
+                $lockedDurations += $lockedDuration
+                $lastUnlockTime = $unlockTime
+
+                # Diagnostic output for locked duration
+                Write-Output "Lock Time: $lockTime | Unlock Time: $unlockTime | Locked Duration: $($lockedDuration.Hours)h $($lockedDuration.Minutes)m $($lockedDuration.Seconds)s"
+            }
+        }
+
+        # Subtract locked durations from session length
+        $sessionLength = $logoffTime - $logonTime
+        $totalLockedTime = [TimeSpan]::FromTicks(($lockedDurations | Measure-Object -Property Ticks -Sum).Sum)
+        
+        $activeSessionTime = $sessionLength - $totalLockedTime
+
+        # Convert to readable format
+        $totalDurationInMinutes = [math]::Round($activeSessionTime.TotalMinutes)
+        $hours = [math]::Floor($totalDurationInMinutes / 60)
+        $minutes = $totalDurationInMinutes % 60
+        $seconds = $activeSessionTime.Seconds
+
+        Write-Output "Logon Time: $logonTime | Logoff Time: $logoffTime | Active Session Length: ${hours}h ${minutes}m ${seconds}s"
+        $sessionDurations += $activeSessionTime
+        $sessionCount++
+    } else {
+        Write-Output "Logon Time: $logonTime | No matching logoff event found for Logon ID: $logonID. Session still active"
+    }
+}
+
+# Calculate average session time
+if ($sessionDurations.Count -gt 0) {
+    $totalSeconds = ($sessionDurations | Measure-Object -Property TotalSeconds -Sum).Sum
+    $averageSessionDuration = [TimeSpan]::FromSeconds($totalSeconds / $sessionDurations.Count)
+    Write-Output "`nAverage Active Session Length: $($averageSessionDuration.Hours)h $($averageSessionDuration.Minutes)m $($averageSessionDuration.Seconds)s"
+}
+
+# Output total number of sessions
+Write-Output "Total Number of Sessions: $sessionCount"
