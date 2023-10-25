@@ -1,16 +1,88 @@
-# Define the event IDs, logon type, username, and lock/unlock event IDs
+<#
+.DESCRIPTION
+	Powershell script which monitors if a device is actively used by its owner.
+    By no means this script is intended to tell us something about a user's productivity. It only tells if a device is actively used or not, so it can be reclaimed if not being used.
+
+.Author(s):
+	Wannes De Boodt - Business Transformation - VMware PSO
+
+.Prerequisites:
+	The script requires HP CMSL installed from: https://www.hp.com/us-en/solutions/client-management-solutions/download.html
+
+.NOTES
+	changelog:
+	23-10-23 - wdeb79mx - Initial version
+#>
+
+#=============================================================
+# Parameters
+#=============================================================
+# Define the log path and log file
+$logpath = "C:\ProgramData\AirWatch\UnifiedAgent\Logs"
+$logfile = "C:\ProgramData\AirWatch\UnifiedAgent\Logs\ActivityMonitor.log"
+
+# Define the event IDs, logon type, lock/unlock event IDs and username
 $logonEventID = 4624
 $logoffEventID = 4647
 $lockEventID = 4800
 $unlockEventID = 4801
 $logonTypes = 2, 11
 $username = "wdeb79mx"
+$Date = (Get-Date).AddDays(-30)  # Only look at events from the last 30 days
 
-# Gather events
+# Initialize statistics
+$totalLockedTime = [TimeSpan]::Zero
+$totalActiveTime = [TimeSpan]::Zero
+$totalIdleTime = [TimeSpan]::Zero
+$firstLogonTime = $null
+$lastLogoffTime = $null
+$sessionCount = 0
+
+#=============================================================
+# Create Log Path
+#=============================================================
+if(-not (Test-Path $logpath)){
+    New-Item -ItemType Directory -Path $logpath -Force
+}
+function Write-Log {
+    param($msg)
+    "$(Get-Date -Format G): $msg" | Out-File -FilePath $logfile -Append -Force
+}
+
+#=============================================================
+# Function to write results to registry
+#=============================================================
+function Set-RegistryValue {
+    param (
+        [string]$RegKeyName,
+        [object]$variableValue
+    )
+    $regTagPath = "HKLM:\SOFTWARE\AirbusMDM\ActivityMonitor"
+
+    # Check if registry key exists
+    if (!(Test-Path $regtagpath)) {
+        # Create registry key if it doesn't exist
+        New-Item -Path $regtagpath -ItemType RegistryKey | Out-Null
+    }
+
+    # Check if registry value exists
+    if (!(Get-ItemProperty -Path $regtagpath -Name $RegKeyName -ErrorAction SilentlyContinue)) {
+        # Create registry value if it doesn't exist
+        New-ItemProperty -Path $regtagpath -Name $RegKeyName -Value $variableValue -PropertyType String | Out-Null
+    }
+
+    # Set registry value to variable value
+    Set-ItemProperty -Path $regtagpath -Name $RegKeyName -Value $variableValue
+}
+
+#=============================================================
+# Gather the relevant events in Event Viewer
+#=============================================================
 function Get-Events($eventID) {
     Get-WinEvent -FilterHashtable @{
         LogName   = 'Security'
-        ID       = $eventID
+        ID        = $eventID
+        StartTime = $Date
     } -ErrorAction SilentlyContinue
 }
 
@@ -22,15 +94,12 @@ $logoffEvents = Get-Events $logoffEventID | Where-Object { $_.Properties[1].Valu
 $lockEvents = Get-Events $lockEventID | Where-Object { $_.Properties[1].Value -eq $username }
 $unlockEvents = Get-Events $unlockEventID | Where-Object { $_.Properties[1].Value -eq $username }
 
-# Diagnostic Output for Lock/Unlock events
-$lockEventsCount = ($lockEvents | Measure-Object).Count
-$unlockEventsCount = ($unlockEvents | Measure-Object).Count
+Write-Log "Listing all completed sessions:"
+$logonEvents | Sort-Object TimeCreated | ForEach-Object {
+    if ($null -eq $firstLogonTime) {
+        $firstLogonTime = $_.TimeCreated
+    }
 
-# Initialize session statistics
-$sessionDurations = @()
-$sessionCount = 0
-
-$logonEvents | ForEach-Object {
     $logonTime = $_.TimeCreated
     $logonID = $_.Properties[7].Value
 
@@ -38,14 +107,12 @@ $logonEvents | ForEach-Object {
 
     if ($matchedLogoff) {
         $logoffTime = $matchedLogoff.TimeCreated
+        $lastLogoffTime = $logoffTime  # Keep track of the last logoff time
 
         # Calculate locked durations within this session
-        $lockedDurations = @()
+        $lockedDurationSum = @()
         $relevantLockEvents = $lockEvents | Where-Object { $_.TimeCreated -ge $logonTime -and $_.TimeCreated -le $logoffTime }
 
-        # Diagnostic output for the relevant Lock/Unlock events
-        Write-Output "Relevant Lock Events Count: $($relevantLockEvents.Count)"
-        
         $lastUnlockTime = $logonTime
         $relevantLockEvents | ForEach-Object {
             $lockTime = $_.TimeCreated
@@ -54,40 +121,88 @@ $logonEvents | ForEach-Object {
             if ($matchedUnlock) {
                 $unlockTime = $matchedUnlock.TimeCreated
                 $lockedDuration = $unlockTime - $lockTime
-                $lockedDurations += $lockedDuration
+                $lockedDurationSum += $lockedDuration
                 $lastUnlockTime = $unlockTime
-
-                # Diagnostic output for locked duration
-                Write-Output "Lock Time: $lockTime | Unlock Time: $unlockTime | Locked Duration: $($lockedDuration.Hours)h $($lockedDuration.Minutes)m $($lockedDuration.Seconds)s"
             }
         }
 
         # Subtract locked durations from session length
         $sessionLength = $logoffTime - $logonTime
-        $totalLockedTime = [TimeSpan]::FromTicks(($lockedDurations | Measure-Object -Property Ticks -Sum).Sum)
+        $totalLockedTimeInSession = [TimeSpan]::FromTicks(($lockedDurationSum | Measure-Object -Property Ticks -Sum).Sum)
+        $totalLockedTime += $totalLockedTimeInSession  # Update the total locked time
         
-        $activeSessionTime = $sessionLength - $totalLockedTime
+        $activeSessionTime = $sessionLength - $totalLockedTimeInSession
+        $totalActiveTime += $activeSessionTime  # Update the total active time
 
         # Convert to readable format
-        $totalDurationInMinutes = [math]::Round($activeSessionTime.TotalMinutes)
-        $hours = [math]::Floor($totalDurationInMinutes / 60)
-        $minutes = $totalDurationInMinutes % 60
+        $days = $activeSessionTime.Days
+        $hours = $activeSessionTime.Hours
+        $minutes = $activeSessionTime.Minutes
         $seconds = $activeSessionTime.Seconds
 
-        Write-Output "Logon Time: $logonTime | Logoff Time: $logoffTime | Active Session Length: ${hours}h ${minutes}m ${seconds}s"
+        Write-Log "Logon Time: $logonTime | Logoff Time: $logoffTime | Active Session Length: ${days}d ${hours}h ${minutes}m ${seconds}s | Locked Duration: $($lockedDurationSum.Hours)h $($lockedDurationSum.Minutes)m $($lockedDurationSum.Seconds)s"
         $sessionDurations += $activeSessionTime
         $sessionCount++
-    } else {
-        Write-Output "Logon Time: $logonTime | No matching logoff event found for Logon ID: $logonID. Session still active"
     }
 }
+
+#=============================================================
+# Calculate statistics
+#=============================================================
+Write-Log "`nCalculate Statistics:"
+# Output the sum of all user sessions (total locked time + total active time)
+$sumOfAllSessions = $totalLockedTime + $totalActiveTime
+Write-Log "Total time of all completed sessions: $($sumOfAllSessions.Days)d $($sumOfAllSessions.Hours)h $($sumOfAllSessions.Minutes)m $($sumOfAllSessions.Seconds)s"
+
+# Calculate the total time that has passed since the first user logon
+if ($null -ne $firstLogonTime -and $null -ne $lastLogoffTime) {
+    $totalTimeSinceFirstLogon = $lastLogoffTime - $firstLogonTime
+
+    # Calculate the total idle time
+    $totalIdleTime = $totalTimeSinceFirstLogon - $sumOfAllSessions
+    Write-Log "Total Idle Time: $($totalIdleTime.Days)d $($totalIdleTime.Hours)h $($totalIdleTime.Minutes)m $($totalIdleTime.Seconds)s"
+}
+
+# Output the total locked time
+Write-Log "Total Locked Time: $($totalLockedTime.Days)d $($totalLockedTime.Hours)h $($totalLockedTime.Minutes)m $($totalLockedTime.Seconds)s"
+
+# Output the total active time
+Write-Log "Total Active Time: $($totalActiveTime.Days)d $($totalActiveTime.Hours)h $($totalActiveTime.Minutes)m $($totalActiveTime.Seconds)s"
 
 # Calculate average session time
 if ($sessionDurations.Count -gt 0) {
     $totalSeconds = ($sessionDurations | Measure-Object -Property TotalSeconds -Sum).Sum
     $averageSessionDuration = [TimeSpan]::FromSeconds($totalSeconds / $sessionDurations.Count)
-    Write-Output "`nAverage Active Session Length: $($averageSessionDuration.Hours)h $($averageSessionDuration.Minutes)m $($averageSessionDuration.Seconds)s"
+    Write-Log "Average Active Session Length: $($averageSessionDuration.Hours)h $($averageSessionDuration.Minutes)m $($averageSessionDuration.Seconds)s"
+}
+
+# Calculate percentages
+if ($totalTimeSinceFirstLogon.Ticks -gt 0) {
+    $idleTimePercentage = ($totalIdleTime.Ticks / $totalTimeSinceFirstLogon.Ticks) * 100
+    Set-RegistryValue "idleTimePercentage" $idleTimePercentage
+    $totalLockedTimePercentage = ($totalLockedTime.Ticks / $totalTimeSinceFirstLogon.Ticks) * 100
+    Set-RegistryValue "totalLockedTimePercentage" $totalLockedTimePercentage
+    $totalActiveTimePercentage = ($totalActiveTime.Ticks / $totalTimeSinceFirstLogon.Ticks) * 100
+    Set-RegistryValue "totalActiveTimePercentage" $totalActiveTimePercentage
+
+    Write-Log "Idle Time Percentage: $($idleTimePercentage)%" 
+    Write-Log "Total Locked Time Percentage: $($totalLockedTimePercentage)%"
+    Write-Log "Total Active Time Percentage: $($totalActiveTimePercentage)%"
 }
 
 # Output total number of sessions
-Write-Output "Total Number of Sessions: $sessionCount"
+Write-Log "Total Number of Sessions: $sessionCount"
+Set-RegistryValue "sessionCount" $sessionCount
+
+# Output the last unlock event time
+$lastUnlockEvent = $unlockEvents | Sort-Object TimeCreated | Select-Object -Last 1
+if ($lastUnlockEvent) {
+    $lastUnlockEventTime = $lastUnlockEvent.TimeCreated
+    Write-Log "Last reported unlock event: $lastUnlockEventTime"
+    Set-RegistryValue "lastUnlockEventTime" $lastUnlockEventTime
+}
+
+#count the number of unlock events for the user
+$unlockEventCount = $unlockEvents.Count
+Write-Log "Number of unlock events: $unlockEventCount"
+Set-RegistryValue "unlockEventCount" $unlockEventCount
