@@ -29,7 +29,7 @@ $logoffEventID = 4647
 $lockEventID = 4800
 $unlockEventID = 4801
 $logonTypes = 2, 11
-$username = "wdeb79mx"
+$username = $env:username
 $Date = (Get-Date).AddDays(-30)  # Only look at events from the last 30 days
 
 # Initialize statistics
