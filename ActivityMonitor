@@ -94,7 +94,7 @@ $logoffEvents = Get-Events $logoffEventID | Where-Object { $_.Properties[1].Valu
 $lockEvents = Get-Events $lockEventID | Where-Object { $_.Properties[1].Value -eq $username }
 $unlockEvents = Get-Events $unlockEventID | Where-Object { $_.Properties[1].Value -eq $username }
 
-Write-Log "Listing all completed sessions:"
+Write-Log "Listing all completed sessions of last 30 days:"
 $logonEvents | Sort-Object TimeCreated | ForEach-Object {
     if ($null -eq $firstLogonTime) {
         $firstLogonTime = $_.TimeCreated
@@ -206,3 +206,7 @@ if ($lastUnlockEvent) {
 $unlockEventCount = $unlockEvents.Count
 Write-Log "Number of unlock events: $unlockEventCount"
 Set-RegistryValue "unlockEventCount" $unlockEventCount
+
+# add script last execution time to registry
+$lastExecutionTime = Get-Date -format "MM/dd/yyyy HH:mm"
+Set-RegistryValue "lastExecutionTime" $lastExecutionTime
