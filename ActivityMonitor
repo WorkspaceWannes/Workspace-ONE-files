@@ -2,6 +2,8 @@
 .DESCRIPTION
 	Powershell script which monitors if a device is actively used by its owner.
     By no means this script is intended to tell us something about a user's productivity. It only tells if a device is actively used or not, so it can be reclaimed if not being used.
+    The script checks event viewer for logon/logoff/lock/unlock events and calculates the total active time, total locked time and total idle time of the device.
+    It creates a log file which is stored together with all intelligent Hub files, as well as registry keys which can be read by using WS1 sensors.
 
 .Author(s):
 	Wannes De Boodt - Business Transformation - VMware PSO
