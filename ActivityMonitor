@@ -7,7 +7,7 @@
 	Wannes De Boodt - Business Transformation - VMware PSO
 
 .Prerequisites:
-	The script requires HP CMSL installed from: https://www.hp.com/us-en/solutions/client-management-solutions/download.html
+	Requires domain joined machines
 
 .NOTES
 	changelog:
