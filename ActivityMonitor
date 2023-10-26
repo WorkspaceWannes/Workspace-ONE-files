@@ -59,7 +59,7 @@ function Set-RegistryValue {
         [string]$RegKeyName,
         [object]$variableValue
     )
-    $regTagPath = "HKLM:\SOFTWARE\AirbusMDM\ActivityMonitor"
+    $regTagPath = "HKLM:\SOFTWARE\Customer\ActivityMonitor"
 
     # Check if registry key exists
     if (!(Test-Path $regtagpath)) {
