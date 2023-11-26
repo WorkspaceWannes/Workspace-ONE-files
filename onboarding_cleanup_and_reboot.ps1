@@ -10,7 +10,7 @@
 
 .NOTES
 	changelog:
-	23-04-28 - wdeb79mx - v1.0.8 Modified logging location
+	23-04-28 - wannes de boodt - v1.0.8 Modified logging location
 #>
 #=============================================================
 # Parameters
