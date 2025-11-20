@@ -1,0 +1,62 @@
+-- 4808 (ITQ)
+CREATE ROW ACCESS POLICY og_4808_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.devices_report`
+GRANT TO ("group:ws1-og-4808-admins@workspacewannes.be")
+FILTER USING (device_location_group_id = 4808);
+
+-- 13022 (Windows Production)
+CREATE ROW ACCESS POLICY og_13022_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.devices_report`
+GRANT TO ("group:ws1-og-13022-admins@workspacewannes.be")
+FILTER USING (device_location_group_id = 13022);
+
+-- 13023 (Windows Production)
+CREATE ROW ACCESS POLICY og_13023_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.devices_report`
+GRANT TO ("group:ws1-og-13023-admins@workspacewannes.be")
+FILTER USING (device_location_group_id = 13023);
+
+-- 13024 (Launcher CICO o365)
+CREATE ROW ACCESS POLICY og_13024_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.devices_report`
+GRANT TO ("group:ws1-og-13024-admins@workspacewannes.be")
+FILTER USING (device_location_group_id = 13024);
+
+-- 13141 (Entra Enrollment)
+CREATE ROW ACCESS POLICY og_13141_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.devices_report`
+GRANT TO ("group:ws1-og-13141-admins@workspacewannes.be")
+FILTER USING (device_location_group_id = 13141);
+
+
+
+
+-- OG 4808
+CREATE ROW ACCESS POLICY sdk_og_4808_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.intelligence_sdk_report`
+GRANT TO ("group:ws1-og-4808-admins@workspacewannes.be")
+FILTER USING (_airwatch_device__device_location_group_id = 4808);
+
+-- OG 13022
+CREATE ROW ACCESS POLICY sdk_og_13022_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.intelligence_sdk_report`
+GRANT TO ("group:ws1-og-13022-admins@workspacewannes.be")
+FILTER USING (_airwatch_device__device_location_group_id = 13022);
+
+-- OG 13023
+CREATE ROW ACCESS POLICY sdk_og_13023_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.intelligence_sdk_report`
+GRANT TO ("group:ws1-og-13023-admins@workspacewannes.be")
+FILTER USING (_airwatch_device__device_location_group_id = 13023);
+
+-- OG 13024
+CREATE ROW ACCESS POLICY sdk_og_13024_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.intelligence_sdk_report`
+GRANT TO ("group:ws1-og-13024-admins@workspacewannes.be")
+FILTER USING (_airwatch_device__device_location_group_id = 13024);
+
+-- OG 13141
+CREATE ROW ACCESS POLICY sdk_og_13141_policy
+ON `hidden-conquest-478613-i7.ws1_intelligence.intelligence_sdk_report`
+GRANT TO ("group:ws1-og-13141-admins@workspacewannes.be")
+FILTER USING (_airwatch_device__device_location_group_id = 13141);
